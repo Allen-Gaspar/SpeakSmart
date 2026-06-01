@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "xZepVO8gM2qs9ZACjwq8X"
+uri = "file://artifacts/speaksmart-mobile/assets/images/icon.png"
+type = "image"
+title = "speaksmart mobile icon"

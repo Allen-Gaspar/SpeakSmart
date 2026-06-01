@@ -1,0 +1,3 @@
+- [Theme system](theme-system.md) — 8 themes via CSS classes on html element; ThemeProvider in src/lib/theme-context.tsx; applied in App.tsx before AuthProvider
+- [Admin account](admin-account.md) — register with admin@speaksmart.com to auto-get isAdmin; ADMIN_EMAILS in auth-context.tsx; admin panel at /admin
+- [Mobile firebase fix](mobile-firebase-fix.md) — use const auth = getAuth(app) only; getReactNativePersistence causes TS errors in Firebase 11 with RN
