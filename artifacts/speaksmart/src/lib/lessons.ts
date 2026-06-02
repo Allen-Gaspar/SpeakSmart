@@ -231,7 +231,7 @@ export const lessons: Lesson[] = [
   // ── CHINESE ───────────────────────────────────────────────────────────────
   {
     id: "zh-greetings",
-    title: "基本问候",
+    title: "基本问��",
     description: "Essential Mandarin Chinese greetings",
     languageId: "chinese",
     difficulty: "beginner",
@@ -437,11 +437,11 @@ export const lessons: Lesson[] = [
       { id: "8", text: "ساعدني من فضلك", romanization: "Sāʿidnī min faḍlika", translation: "Help me, please", hint: "Stress 'SĀ-ʿid'" },
     ],
   },
-  // ── TAGALOG / FILIPINO ────────────────────────────────────────────
+  // ── TAGALOG ──────────────────────────────────────────────────────
   {
     id: "tl-greetings",
     title: "Mga Pagbati",
-    description: "Basic Filipino greetings and introductions",
+    description: "Basic Tagalog greetings and introductions",
     languageId: "tagalog",
     difficulty: "beginner",
     xpReward: 50,
@@ -462,7 +462,7 @@ export const lessons: Lesson[] = [
   {
     id: "tl-daily",
     title: "Pang-araw-araw na Parirala",
-    description: "Everyday Filipino expressions",
+    description: "Everyday Tagalog expressions",
     languageId: "tagalog",
     difficulty: "intermediate",
     xpReward: 65,
@@ -481,7 +481,7 @@ export const lessons: Lesson[] = [
   {
     id: "tl-travel",
     title: "Paglalakbay at Direksyon",
-    description: "Travel phrases and directions in Filipino",
+    description: "Travel phrases and directions in Tagalog",
     languageId: "tagalog",
     difficulty: "intermediate",
     xpReward: 70,

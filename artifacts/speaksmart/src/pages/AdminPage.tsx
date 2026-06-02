@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "wouter";
 import {
   collection,
   query,
@@ -14,20 +13,17 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth, UserData } from "@/lib/auth-context";
-import { languages as staticLanguages } from "@/lib/languages";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import {
   Shield,
   Users,
-  Trophy,
   BarChart2,
   Trash2,
   Ban,
   Check,
   RefreshCw,
   Loader2,
-  ChevronUp,
   Crown,
   Globe,
   BookOpen,
@@ -36,23 +32,28 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-type AdminTab = "users" | "leaderboard" | "stats" | "languages" | "lessons";
-
-interface LeaderboardEntry {
-  uid: string;
-  displayName: string;
-  xp: number;
-  level: number;
-  streak: number;
-  updatedAt?: unknown;
-}
+type AdminTab = "users" | "stats" | "languages" | "lessons";
 
 interface AdminLanguage {
   id: string;
+  docId?: string;
   name: string;
   nativeName: string;
   flag: string;
   speechCode: string;
+  addedAt?: unknown;
+}
+
+interface AdminLesson {
+  id: string;
+  docId?: string;
+  title: string;
+  description: string;
+  languageId: string;
+  difficulty: "beginner" | "intermediate" | "advanced";
+  xpReward: number;
+  duration: number;
+  phrases: { id: string; text: string; translation: string; hint: string }[];
   addedAt?: unknown;
 }
 
@@ -65,19 +66,18 @@ interface NewPhraseRow {
 const EMPTY_LESSON = {
   title: "",
   description: "",
-  languageId: "english",
+  languageId: "",
   difficulty: "beginner" as "beginner" | "intermediate" | "advanced",
   xpReward: 50,
   duration: 5,
 };
 
 export default function AdminPage() {
-  const { userData, loading } = useAuth();
-  const [, setLocation] = useLocation();
+  const { userData } = useAuth();
   const [tab, setTab] = useState<AdminTab>("users");
   const [users, setUsers] = useState<UserData[]>([]);
-  const [lbEntries, setLbEntries] = useState<LeaderboardEntry[]>([]);
   const [adminLanguages, setAdminLanguages] = useState<AdminLanguage[]>([]);
+  const [adminLessons, setAdminLessons] = useState<AdminLesson[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState("");
 
@@ -97,10 +97,6 @@ export default function AdminPage() {
   const isAdmin = userData?.isAdmin === true;
 
   useEffect(() => {
-    if (!loading && !isAdmin) setLocation("/");
-  }, [loading, isAdmin, setLocation]);
-
-  useEffect(() => {
     if (isAdmin) loadData();
   }, [isAdmin, tab]);
 
@@ -111,13 +107,13 @@ export default function AdminPage() {
         const snap = await getDocs(query(collection(db, "users"), orderBy("xp", "desc"), limit(100)));
         setUsers(snap.docs.map((d) => d.data() as UserData));
       }
-      if (tab === "leaderboard") {
-        const snap = await getDocs(query(collection(db, "leaderboard"), orderBy("xp", "desc"), limit(50)));
-        setLbEntries(snap.docs.map((d) => ({ uid: d.id, ...d.data() } as LeaderboardEntry)));
-      }
       if (tab === "languages") {
         const snap = await getDocs(collection(db, "adminLanguages"));
-        setAdminLanguages(snap.docs.map((d) => ({ id: d.id, ...d.data() } as AdminLanguage)));
+        setAdminLanguages(snap.docs.map((d) => ({ docId: d.id, ...d.data() } as AdminLanguage)));
+      }
+      if (tab === "lessons") {
+        const snap = await getDocs(collection(db, "adminLessons"));
+        setAdminLessons(snap.docs.map((d) => ({ docId: d.id, ...d.data() } as AdminLesson)));
       }
     } finally {
       setDataLoading(false);
@@ -141,12 +137,7 @@ export default function AdminPage() {
     flash(isAdminNow ? "Admin removed." : "Admin granted.");
   };
 
-  const deleteLbEntry = async (uid: string) => {
-    await deleteDoc(doc(db, "leaderboard", uid));
-    setLbEntries((prev) => prev.filter((e) => e.uid !== uid));
-    flash("Entry removed from leaderboard.");
-  };
-
+  // ── Language management ──
   const handleAddLanguage = async () => {
     if (!newLang.name || !newLang.flag || !newLang.speechCode) {
       flash("Fill in all required language fields.");
@@ -155,14 +146,14 @@ export default function AdminPage() {
     setAddingLang(true);
     try {
       const id = newLang.name.toLowerCase().replace(/\s+/g, "-");
-      await addDoc(collection(db, "adminLanguages"), {
+      const docRef = await addDoc(collection(db, "adminLanguages"), {
         ...newLang,
         id,
         addedAt: serverTimestamp(),
       });
-      setAdminLanguages((prev) => [...prev, { ...newLang, id }]);
+      setAdminLanguages((prev) => [...prev, { ...newLang, id, docId: docRef.id }]);
       setNewLang({ name: "", nativeName: "", flag: "", speechCode: "" });
-      flash("Language added successfully!");
+      flash("Language added successfully! Users can now practice this language.");
     } finally {
       setAddingLang(false);
     }
@@ -170,58 +161,69 @@ export default function AdminPage() {
 
   const handleRemoveAdminLanguage = async (docId: string) => {
     await deleteDoc(doc(db, "adminLanguages", docId));
-    setAdminLanguages((prev) => prev.filter((l) => l.id !== docId));
+    setAdminLanguages((prev) => prev.filter((l) => l.docId !== docId));
     flash("Language removed.");
   };
 
+  // ── Lesson management ──
   const handleAddLesson = async () => {
     const validPhrases = newPhrases.filter((p) => p.text.trim() && p.translation.trim());
-    if (!newLesson.title || validPhrases.length < 1) {
-      flash("Add a title and at least 1 phrase.");
+    if (!newLesson.title || !newLesson.languageId || validPhrases.length < 1) {
+      flash("Add a title, select a language, and add at least 1 phrase.");
       return;
     }
     setAddingLesson(true);
     try {
-      await addDoc(collection(db, "adminLessons"), {
+      const lessonId = `admin-${Date.now()}`;
+      const docRef = await addDoc(collection(db, "adminLessons"), {
         ...newLesson,
+        id: lessonId,
         phrases: validPhrases.map((p, i) => ({ id: String(i + 1), ...p })),
         addedAt: serverTimestamp(),
       });
+      setAdminLessons((prev) => [
+        ...prev,
+        {
+          ...newLesson,
+          id: lessonId,
+          docId: docRef.id,
+          phrases: validPhrases.map((p, i) => ({ id: String(i + 1), ...p })),
+        },
+      ]);
       setNewLesson(EMPTY_LESSON);
       setNewPhrases([{ text: "", translation: "", hint: "" }, { text: "", translation: "", hint: "" }, { text: "", translation: "", hint: "" }]);
-      flash("Lesson added successfully!");
+      flash("Lesson added successfully! Users can now access this lesson.");
     } finally {
       setAddingLesson(false);
     }
   };
 
+  const handleRemoveLesson = async (docId: string) => {
+    await deleteDoc(doc(db, "adminLessons", docId));
+    setAdminLessons((prev) => prev.filter((l) => l.docId !== docId));
+    flash("Lesson removed.");
+  };
+
   const totalXP = users.reduce((s, u) => s + (u.xp || 0), 0);
   const totalLessons = users.reduce((s, u) => s + (u.totalLessons || 0), 0);
-
-  if (loading) {
-    return (
-      <main className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </main>
-    );
-  }
 
   if (!isAdmin) return null;
 
   const TABS: { id: AdminTab; label: string; icon: typeof Shield }[] = [
-    { id: "users",     label: "Users",     icon: Users },
-    { id: "leaderboard", label: "Leaderboard", icon: Trophy },
-    { id: "languages", label: "Languages", icon: Globe },
-    { id: "lessons",   label: "Lessons",   icon: BookOpen },
-    { id: "stats",     label: "Stats",     icon: BarChart2 },
+    { id: "users", label: "Users", icon: Users },
+    { id: "stats", label: "Stats", icon: BarChart2 },
+    { id: "languages", label: "Manage Languages", icon: Globe },
+    { id: "lessons", label: "Manage Lessons", icon: BookOpen },
   ];
+
+  // Get available languages for lesson form (admin-added languages)
+  const availableLanguages = adminLanguages;
 
   return (
     <main className="min-h-screen">
       <Navbar />
       <div className="pt-20 pb-12 px-4">
         <div className="max-w-5xl mx-auto">
-
           {/* Header */}
           <div className="flex items-center gap-4 mb-8">
             <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center glow-sm">
@@ -272,7 +274,9 @@ export default function AdminPage() {
                 <h2 className="font-semibold">All Users ({users.length})</h2>
               </div>
               {dataLoading ? (
-                <div className="p-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+                <div className="p-8 flex justify-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
               ) : (
                 <div className="divide-y divide-border">
                   {users.map((u) => (
@@ -303,7 +307,17 @@ export default function AdminPage() {
                           {u.isAdmin ? "Remove Admin" : "Make Admin"}
                         </Button>
                         <Button size="sm" variant={u.isBanned ? "default" : "destructive"} onClick={() => toggleBan(u.uid, !!u.isBanned)} className="h-7 text-xs">
-                          {u.isBanned ? <><Check className="w-3 h-3 mr-1" />Unban</> : <><Ban className="w-3 h-3 mr-1" />Ban</>}
+                          {u.isBanned ? (
+                            <>
+                              <Check className="w-3 h-3 mr-1" />
+                              Unban
+                            </>
+                          ) : (
+                            <>
+                              <Ban className="w-3 h-3 mr-1" />
+                              Ban
+                            </>
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -314,77 +328,67 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* ── Leaderboard Tab ── */}
-          {tab === "leaderboard" && (
-            <div className="glass rounded-2xl overflow-hidden">
-              <div className="p-4 border-b border-border">
-                <h2 className="font-semibold">Leaderboard Entries ({lbEntries.length})</h2>
+          {/* ── Stats Tab ── */}
+          {tab === "stats" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="glass rounded-2xl p-6">
+                <p className="text-sm text-muted-foreground mb-1">Total Users</p>
+                <p className="text-3xl font-bold">{users.length}</p>
               </div>
-              {dataLoading ? (
-                <div className="p-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {lbEntries.map((e, i) => (
-                    <div key={e.uid} className="flex items-center justify-between p-4 gap-4 flex-wrap">
-                      <div className="flex items-center gap-3">
-                        <span className="w-6 text-muted-foreground text-sm text-center">{i + 1}</span>
-                        <div>
-                          <p className="font-medium">{e.displayName}</p>
-                          <p className="text-xs text-muted-foreground">Lv.{e.level} · {e.streak}d streak</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-primary font-bold">{e.xp.toLocaleString()} XP</span>
-                        <Button size="sm" variant="destructive" onClick={() => deleteLbEntry(e.uid)} className="h-7 text-xs">
-                          <Trash2 className="w-3 h-3 mr-1" /> Remove
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  {lbEntries.length === 0 && <div className="py-12 text-center text-muted-foreground">No leaderboard entries yet.</div>}
-                </div>
-              )}
+              <div className="glass rounded-2xl p-6">
+                <p className="text-sm text-muted-foreground mb-1">Total XP Earned</p>
+                <p className="text-3xl font-bold text-primary">{totalXP.toLocaleString()}</p>
+              </div>
+              <div className="glass rounded-2xl p-6">
+                <p className="text-sm text-muted-foreground mb-1">Lessons Completed</p>
+                <p className="text-3xl font-bold">{totalLessons.toLocaleString()}</p>
+              </div>
+              <div className="glass rounded-2xl p-6">
+                <p className="text-sm text-muted-foreground mb-1">Admins</p>
+                <p className="text-3xl font-bold text-yellow-400">{users.filter((u) => u.isAdmin).length}</p>
+              </div>
+              <div className="glass rounded-2xl p-6">
+                <p className="text-sm text-muted-foreground mb-1">Custom Languages</p>
+                <p className="text-3xl font-bold text-green-400">{adminLanguages.length}</p>
+              </div>
+              <div className="glass rounded-2xl p-6">
+                <p className="text-sm text-muted-foreground mb-1">Custom Lessons</p>
+                <p className="text-3xl font-bold text-blue-400">{adminLessons.length}</p>
+              </div>
+              <div className="glass rounded-2xl p-6">
+                <p className="text-sm text-muted-foreground mb-1">Banned Users</p>
+                <p className="text-3xl font-bold text-red-400">{users.filter((u) => u.isBanned).length}</p>
+              </div>
+              <div className="glass rounded-2xl p-6">
+                <p className="text-sm text-muted-foreground mb-1">Active Users</p>
+                <p className="text-3xl font-bold text-green-500">{users.filter((u) => !u.isBanned).length}</p>
+              </div>
             </div>
           )}
 
-          {/* ── Languages Tab ── */}
+          {/* ── Languages Tab (Admin Management) ── */}
           {tab === "languages" && (
             <div className="space-y-6">
-              {/* Built-in languages */}
-              <div className="glass rounded-2xl overflow-hidden">
-                <div className="p-4 border-b border-border">
-                  <h2 className="font-semibold">Built-in Languages ({staticLanguages.length})</h2>
-                </div>
-                <div className="divide-y divide-border">
-                  {staticLanguages.map((lang) => (
-                    <div key={lang.id} className="flex items-center gap-3 p-4">
-                      <span className="text-2xl">{lang.flag}</span>
-                      <div>
-                        <p className="font-medium">{lang.name} <span className="text-muted-foreground text-sm">({lang.nativeName})</span></p>
-                        <p className="text-xs text-muted-foreground">{lang.accents.length} accent{lang.accents.length !== 1 ? "s" : ""} · {lang.speechCode}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Admin-added languages */}
+              {/* Admin-added languages list */}
               {adminLanguages.length > 0 && (
                 <div className="glass rounded-2xl overflow-hidden">
                   <div className="p-4 border-b border-border">
-                    <h2 className="font-semibold">Admin-Added Languages ({adminLanguages.length})</h2>
+                    <h2 className="font-semibold">Custom Languages ({adminLanguages.length})</h2>
+                    <p className="text-xs text-muted-foreground mt-1">These languages are available for users to practice</p>
                   </div>
                   <div className="divide-y divide-border">
                     {adminLanguages.map((lang) => (
-                      <div key={lang.id} className="flex items-center justify-between gap-3 p-4">
+                      <div key={lang.docId} className="flex items-center justify-between gap-3 p-4">
                         <div className="flex items-center gap-3">
                           <span className="text-2xl">{lang.flag}</span>
                           <div>
-                            <p className="font-medium">{lang.name} <span className="text-muted-foreground text-sm">({lang.nativeName})</span></p>
-                            <p className="text-xs text-muted-foreground">{lang.speechCode}</p>
+                            <p className="font-medium">
+                              {lang.name} <span className="text-muted-foreground text-sm">({lang.nativeName})</span>
+                            </p>
+                            <p className="text-xs text-muted-foreground">Speech code: {lang.speechCode}</p>
                           </div>
                         </div>
-                        <Button size="sm" variant="destructive" onClick={() => handleRemoveAdminLanguage(lang.id)} className="h-7 text-xs">
+                        <Button size="sm" variant="destructive" onClick={() => handleRemoveAdminLanguage(lang.docId!)} className="h-7 text-xs">
                           <X className="w-3 h-3 mr-1" /> Remove
                         </Button>
                       </div>
@@ -398,12 +402,15 @@ export default function AdminPage() {
                 <h2 className="font-semibold flex items-center gap-2">
                   <Plus className="w-4 h-4 text-primary" /> Add New Language
                 </h2>
+                <p className="text-sm text-muted-foreground">
+                  Add a new language for users to practice. Use the Web Speech API speech code for pronunciation.
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">Language Name *</label>
                     <input
                       className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                      placeholder="e.g. Swahili"
+                      placeholder="e.g. Tagalog"
                       value={newLang.name}
                       onChange={(e) => setNewLang((p) => ({ ...p, name: e.target.value }))}
                     />
@@ -412,7 +419,7 @@ export default function AdminPage() {
                     <label className="text-xs text-muted-foreground mb-1 block">Native Name</label>
                     <input
                       className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                      placeholder="e.g. Kiswahili"
+                      placeholder="e.g. Tagalog"
                       value={newLang.nativeName}
                       onChange={(e) => setNewLang((p) => ({ ...p, nativeName: e.target.value }))}
                     />
@@ -421,7 +428,7 @@ export default function AdminPage() {
                     <label className="text-xs text-muted-foreground mb-1 block">Flag Emoji *</label>
                     <input
                       className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                      placeholder="e.g. 🇰🇪"
+                      placeholder="e.g. flag emoji"
                       value={newLang.flag}
                       onChange={(e) => setNewLang((p) => ({ ...p, flag: e.target.value }))}
                     />
@@ -430,7 +437,7 @@ export default function AdminPage() {
                     <label className="text-xs text-muted-foreground mb-1 block">Speech Code *</label>
                     <input
                       className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                      placeholder="e.g. sw-KE"
+                      placeholder="e.g. tl-PH, fil-PH"
                       value={newLang.speechCode}
                       onChange={(e) => setNewLang((p) => ({ ...p, speechCode: e.target.value }))}
                     />
@@ -444,155 +451,185 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* ── Lessons Tab ── */}
+          {/* ── Lessons Tab (Admin Management) ── */}
           {tab === "lessons" && (
-            <div className="glass rounded-2xl p-6 space-y-5">
-              <h2 className="font-semibold flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-primary" /> Add Custom Lesson
-              </h2>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <label className="text-xs text-muted-foreground mb-1 block">Lesson Title *</label>
-                  <input
-                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                    placeholder="e.g. Everyday Greetings"
-                    value={newLesson.title}
-                    onChange={(e) => setNewLesson((p) => ({ ...p, title: e.target.value }))}
-                  />
-                </div>
-                <div className="col-span-2">
-                  <label className="text-xs text-muted-foreground mb-1 block">Description</label>
-                  <input
-                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                    placeholder="Short description of the lesson"
-                    value={newLesson.description}
-                    onChange={(e) => setNewLesson((p) => ({ ...p, description: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Language</label>
-                  <select
-                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                    value={newLesson.languageId}
-                    onChange={(e) => setNewLesson((p) => ({ ...p, languageId: e.target.value }))}
-                  >
-                    {staticLanguages.map((l) => (
-                      <option key={l.id} value={l.id}>{l.flag} {l.name}</option>
+            <div className="space-y-6">
+              {/* Admin-added lessons list */}
+              {adminLessons.length > 0 && (
+                <div className="glass rounded-2xl overflow-hidden">
+                  <div className="p-4 border-b border-border">
+                    <h2 className="font-semibold">Custom Lessons ({adminLessons.length})</h2>
+                    <p className="text-xs text-muted-foreground mt-1">These lessons are available for users</p>
+                  </div>
+                  <div className="divide-y divide-border">
+                    {adminLessons.map((lesson) => (
+                      <div key={lesson.docId} className="flex items-center justify-between gap-3 p-4">
+                        <div>
+                          <p className="font-medium">{lesson.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {lesson.languageId} | {lesson.difficulty} | {lesson.phrases.length} phrases | {lesson.xpReward} XP
+                          </p>
+                        </div>
+                        <Button size="sm" variant="destructive" onClick={() => handleRemoveLesson(lesson.docId!)} className="h-7 text-xs">
+                          <Trash2 className="w-3 h-3 mr-1" /> Remove
+                        </Button>
+                      </div>
                     ))}
-                  </select>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Difficulty</label>
-                  <select
-                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                    value={newLesson.difficulty}
-                    onChange={(e) => setNewLesson((p) => ({ ...p, difficulty: e.target.value as "beginner" | "intermediate" | "advanced" }))}
-                  >
-                    <option value="beginner">Beginner</option>
-                    <option value="intermediate">Intermediate</option>
-                    <option value="advanced">Advanced</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">XP Reward</label>
-                  <input
-                    type="number"
-                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                    value={newLesson.xpReward}
-                    onChange={(e) => setNewLesson((p) => ({ ...p, xpReward: Number(e.target.value) }))}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Duration (min)</label>
-                  <input
-                    type="number"
-                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                    value={newLesson.duration}
-                    onChange={(e) => setNewLesson((p) => ({ ...p, duration: Number(e.target.value) }))}
-                  />
-                </div>
-              </div>
+              )}
 
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs text-muted-foreground">Phrases (at least 1 required)</label>
-                  <button
-                    onClick={() => setNewPhrases((p) => [...p, { text: "", translation: "", hint: "" }])}
-                    className="text-xs text-primary hover:underline flex items-center gap-1"
-                  >
-                    <Plus className="w-3 h-3" /> Add phrase
-                  </button>
+              {/* Add lesson form */}
+              <div className="glass rounded-2xl p-6 space-y-5">
+                <h2 className="font-semibold flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-primary" /> Add Custom Lesson
+                </h2>
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm space-y-2">
+                  <p className="font-medium text-blue-400">Important: Phrases must be in the target language!</p>
+                  <p className="text-muted-foreground">
+                    When adding a lesson for Vietnamese, write the phrases in Vietnamese (e.g., &quot;Xin chao&quot;).
+                    When adding a lesson for Tagalog, write phrases in Tagalog (e.g., &quot;Kamusta ka?&quot;).
+                    The translation should be the English meaning.
+                  </p>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    <strong>Example for Vietnamese:</strong><br />
+                    Phrase: &quot;Xin chao&quot; | Translation: &quot;Hello&quot; | Hint: &quot;Stress first syllable&quot;
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {newPhrases.map((phrase, idx) => (
-                    <div key={idx} className="grid grid-cols-3 gap-2 items-center">
-                      <input
-                        className="px-2.5 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                        placeholder={`Phrase ${idx + 1}`}
-                        value={phrase.text}
-                        onChange={(e) => setNewPhrases((p) => p.map((r, i) => i === idx ? { ...r, text: e.target.value } : r))}
-                      />
-                      <input
-                        className="px-2.5 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                        placeholder="Translation"
-                        value={phrase.translation}
-                        onChange={(e) => setNewPhrases((p) => p.map((r, i) => i === idx ? { ...r, translation: e.target.value } : r))}
-                      />
-                      <div className="flex gap-1">
+
+                {availableLanguages.length === 0 ? (
+                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-yellow-400 text-sm">
+                    No custom languages available. Please add a language first in the &quot;Manage Languages&quot; tab.
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="col-span-2">
+                        <label className="text-xs text-muted-foreground mb-1 block">Lesson Title *</label>
                         <input
-                          className="flex-1 px-2.5 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
-                          placeholder="Hint (optional)"
-                          value={phrase.hint}
-                          onChange={(e) => setNewPhrases((p) => p.map((r, i) => i === idx ? { ...r, hint: e.target.value } : r))}
+                          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
+                          placeholder="e.g. Everyday Greetings"
+                          value={newLesson.title}
+                          onChange={(e) => setNewLesson((p) => ({ ...p, title: e.target.value }))}
                         />
-                        {newPhrases.length > 1 && (
-                          <button
-                            onClick={() => setNewPhrases((p) => p.filter((_, i) => i !== idx))}
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-xs text-muted-foreground mb-1 block">Description</label>
+                        <input
+                          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
+                          placeholder="Short description of the lesson"
+                          value={newLesson.description}
+                          onChange={(e) => setNewLesson((p) => ({ ...p, description: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground mb-1 block">Language *</label>
+                        <select
+                          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
+                          value={newLesson.languageId}
+                          onChange={(e) => setNewLesson((p) => ({ ...p, languageId: e.target.value }))}
+                        >
+                          <option value="">Select Language</option>
+                          {availableLanguages.map((lang) => (
+                            <option key={lang.id} value={lang.id}>
+                              {lang.flag} {lang.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground mb-1 block">Difficulty</label>
+                        <select
+                          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
+                          value={newLesson.difficulty}
+                          onChange={(e) =>
+                            setNewLesson((p) => ({ ...p, difficulty: e.target.value as "beginner" | "intermediate" | "advanced" }))
+                          }
+                        >
+                          <option value="beginner">Beginner</option>
+                          <option value="intermediate">Intermediate</option>
+                          <option value="advanced">Advanced</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground mb-1 block">XP Reward</label>
+                        <input
+                          type="number"
+                          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
+                          value={newLesson.xpReward}
+                          onChange={(e) => setNewLesson((p) => ({ ...p, xpReward: Number(e.target.value) }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground mb-1 block">Duration (min)</label>
+                        <input
+                          type="number"
+                          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
+                          value={newLesson.duration}
+                          onChange={(e) => setNewLesson((p) => ({ ...p, duration: Number(e.target.value) }))}
+                        />
                       </div>
                     </div>
-                  ))}
-                </div>
+
+                    {/* Phrases */}
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-muted-foreground block">Phrases (add at least 1)</label>
+                        <p className="text-xs text-muted-foreground/70 mt-0.5">Write phrases in the target language, translations in English</p>
+                      </div>
+                      {newPhrases.map((phrase, idx) => (
+                        <div key={idx} className="grid grid-cols-3 gap-2">
+                          <input
+                            className="px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
+                            placeholder="e.g. Xin chao (target lang)"
+                            value={phrase.text}
+                            onChange={(e) => {
+                              const copy = [...newPhrases];
+                              copy[idx].text = e.target.value;
+                              setNewPhrases(copy);
+                            }}
+                          />
+                          <input
+                            className="px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
+                            placeholder="e.g. Hello (English)"
+                            value={phrase.translation}
+                            onChange={(e) => {
+                              const copy = [...newPhrases];
+                              copy[idx].translation = e.target.value;
+                              setNewPhrases(copy);
+                            }}
+                          />
+                          <input
+                            className="px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm"
+                            placeholder="Pronunciation hint"
+                            value={phrase.hint}
+                            onChange={(e) => {
+                              const copy = [...newPhrases];
+                              copy[idx].hint = e.target.value;
+                              setNewPhrases(copy);
+                            }}
+                          />
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setNewPhrases((p) => [...p, { text: "", translation: "", hint: "" }])}
+                      >
+                        <Plus className="w-3 h-3 mr-1" /> Add Phrase Row
+                      </Button>
+                    </div>
+
+                    <Button onClick={handleAddLesson} disabled={addingLesson} className="gap-2">
+                      {addingLesson ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                      Add Lesson
+                    </Button>
+                  </>
+                )}
               </div>
-
-              <Button onClick={handleAddLesson} disabled={addingLesson} className="gap-2">
-                {addingLesson ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                Add Lesson
-              </Button>
             </div>
           )}
-
-          {/* ── Stats Tab ── */}
-          {tab === "stats" && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {[
-                { label: "Total Users", value: users.length, icon: Users },
-                { label: "Total XP Earned", value: totalXP.toLocaleString(), icon: Trophy },
-                { label: "Lessons Completed", value: totalLessons, icon: BarChart2 },
-                { label: "Admin Accounts", value: users.filter((u) => u.isAdmin).length, icon: Shield },
-                { label: "Banned Users", value: users.filter((u) => u.isBanned).length, icon: Ban },
-                {
-                  label: "Avg XP / User",
-                  value: users.length ? Math.round(totalXP / users.length).toLocaleString() : 0,
-                  icon: ChevronUp,
-                },
-              ].map((stat) => (
-                <div key={stat.label} className="glass rounded-2xl p-5 text-center">
-                  <stat.icon className="w-6 h-6 text-primary mx-auto mb-2" />
-                  <p className="text-2xl font-bold">
-                    {dataLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : stat.value}
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">{stat.label}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
         </div>
       </div>
       <Footer />

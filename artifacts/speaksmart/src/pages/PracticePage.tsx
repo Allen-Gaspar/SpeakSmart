@@ -1,21 +1,83 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "wouter";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-import { getLanguageById } from "@/lib/languages";
+import { getLanguageById, Language, Accent } from "@/lib/languages";
 import { PracticeArea } from "@/components/practice/practice-area";
 import { AccentSelector } from "@/components/practice/accent-selector";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+interface AdminLanguage {
+  id: string;
+  name: string;
+  nativeName: string;
+  flag: string;
+  speechCode: string;
+}
 
 export default function PracticePage() {
   const params = useParams<{ language: string }>();
   const languageId = params.language;
-  const language = getLanguageById(languageId);
 
-  const [selectedAccent, setSelectedAccent] = useState(
-    language?.accents[0]?.id || ""
-  );
+  const [language, setLanguage] = useState<Language | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedAccent, setSelectedAccent] = useState("");
+
+  useEffect(() => {
+    const fetchLanguage = async () => {
+      // First try to get from static languages
+      const staticLang = getLanguageById(languageId);
+      if (staticLang) {
+        setLanguage(staticLang);
+        setSelectedAccent(staticLang.accents[0]?.id || "");
+        setLoading(false);
+        return;
+      }
+
+      // If not found, try to fetch from admin languages
+      try {
+        const snap = await getDocs(collection(db, "adminLanguages"));
+        const adminLang = snap.docs.find((d) => d.data().id === languageId);
+        if (adminLang) {
+          const data = adminLang.data() as AdminLanguage;
+          const convertedLang: Language = {
+            id: data.id,
+            name: data.name,
+            nativeName: data.nativeName || data.name,
+            flag: data.flag,
+            speechCode: data.speechCode,
+            accents: [
+              {
+                id: data.speechCode,
+                name: "Standard",
+                region: data.name,
+                speechCode: data.speechCode,
+              },
+            ] as Accent[],
+          };
+          setLanguage(convertedLang);
+          setSelectedAccent(convertedLang.accents[0]?.id || "");
+        }
+      } catch (error) {
+        console.error("Error fetching admin language:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLanguage();
+  }, [languageId]);
+
+  if (loading) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </main>
+    );
+  }
 
   if (!language) {
     return (
@@ -60,10 +122,7 @@ export default function PracticePage() {
             onSelectAccent={setSelectedAccent}
           />
 
-          <PracticeArea
-            language={language}
-            accent={currentAccent}
-          />
+          <PracticeArea language={language} accent={currentAccent} />
         </div>
       </div>
       <Footer />

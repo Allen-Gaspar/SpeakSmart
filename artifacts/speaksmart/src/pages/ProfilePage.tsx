@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { collection, query, orderBy, limit, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth, HistoryEntry } from "@/lib/auth-context";
@@ -30,17 +30,10 @@ function ScoreBadge({ score }: { score: number }) {
 }
 
 export default function ProfilePage() {
-  const [, setLocation] = useLocation();
-  const { user, userData, loading } = useAuth();
+  const { user, userData } = useAuth();
   const [tab, setTab] = useState<ProfileTab>("overview");
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-
-  useEffect(() => {
-    if (!loading && !user) {
-      setLocation("/login");
-    }
-  }, [user, loading, setLocation]);
 
   useEffect(() => {
     if (tab === "history" && user) {
@@ -60,14 +53,7 @@ export default function ProfilePage() {
     }
   }, [tab, user]);
 
-  if (loading) {
-    return (
-      <main className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </main>
-    );
-  }
-
+  // ProtectedRoute handles auth check, so userData should always exist here
   if (!user || !userData) return null;
 
   const tabs: { id: ProfileTab; label: string; icon: typeof User }[] = [

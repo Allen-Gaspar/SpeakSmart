@@ -25,7 +25,7 @@ const STEPS: Step[] = [
     icon: Globe,
     color: "text-blue-400",
     title: "Choose a Language",
-    description: "Go to Languages in the navigation to browse 11 languages — including Filipino! Pick your accent too.",
+    description: "Go to Languages in the navigation to browse 11 languages — including Tagalog! Pick your accent too.",
     tip: "You can practice multiple languages at the same time.",
   },
   {

@@ -1,23 +1,134 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-import { getLessonById } from "@/lib/lessons";
-import { getLanguageById } from "@/lib/languages";
+import { getLessonById, Lesson } from "@/lib/lessons";
+import { getLanguageById, Language, Accent } from "@/lib/languages";
 import { LessonPractice } from "@/components/lessons/lesson-practice";
 import { LessonComplete } from "@/components/lessons/lesson-complete";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Clock, Zap, BookOpen } from "lucide-react";
+import { ArrowLeft, Clock, Zap, BookOpen, Loader2 } from "lucide-react";
+
+interface AdminLanguage {
+  id: string;
+  name: string;
+  nativeName: string;
+  flag: string;
+  speechCode: string;
+}
+
+interface AdminLesson {
+  id: string;
+  title: string;
+  description: string;
+  languageId: string;
+  difficulty: "beginner" | "intermediate" | "advanced";
+  xpReward: number;
+  duration: number;
+  phrases: { id: string; text: string; translation: string; hint: string }[];
+}
 
 export default function LessonDetailPage() {
   const params = useParams<{ lessonId: string }>();
   const [, setLocation] = useLocation();
   const lessonId = params.lessonId;
-  const lesson = getLessonById(lessonId);
+
+  const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [language, setLanguage] = useState<Language | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const [started, setStarted] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [scores, setScores] = useState<number[]>([]);
+
+  useEffect(() => {
+    const fetchLesson = async () => {
+      // First try to get from static lessons
+      const staticLesson = getLessonById(lessonId);
+      if (staticLesson) {
+        setLesson(staticLesson);
+        const staticLang = getLanguageById(staticLesson.languageId);
+        setLanguage(staticLang || null);
+        setLoading(false);
+        return;
+      }
+
+      // If not found, try to fetch from admin lessons
+      try {
+        const lessonSnap = await getDocs(collection(db, "adminLessons"));
+        const adminLesson = lessonSnap.docs.find((d) => d.data().id === lessonId);
+
+        if (adminLesson) {
+          const data = adminLesson.data() as AdminLesson;
+          const convertedLesson: Lesson = {
+            id: data.id,
+            title: data.title,
+            description: data.description || "",
+            languageId: data.languageId,
+            difficulty: data.difficulty || "beginner",
+            xpReward: data.xpReward || 50,
+            duration: data.duration || 5,
+            phrases: data.phrases || [],
+          };
+          setLesson(convertedLesson);
+
+          // Try to find the language
+          let foundLang = getLanguageById(data.languageId);
+          if (!foundLang) {
+            // Look in admin languages
+            const langSnap = await getDocs(collection(db, "adminLanguages"));
+            const adminLang = langSnap.docs.find((d) => d.data().id === data.languageId);
+            if (adminLang) {
+              const langData = adminLang.data() as AdminLanguage;
+              foundLang = {
+                id: langData.id,
+                name: langData.name,
+                nativeName: langData.nativeName || langData.name,
+                flag: langData.flag,
+                speechCode: langData.speechCode,
+                accents: [
+                  {
+                    id: langData.speechCode,
+                    name: "Standard",
+                    region: langData.name,
+                    speechCode: langData.speechCode,
+                  },
+                ] as Accent[],
+              };
+            }
+          }
+          setLanguage(foundLang || null);
+        }
+      } catch (error) {
+        console.error("Error fetching admin lesson:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLesson();
+  }, [lessonId]);
+
+  const handleComplete = (finalScores: number[]) => {
+    setScores(finalScores);
+    setCompleted(true);
+  };
+
+  const handleRestart = () => {
+    setStarted(false);
+    setCompleted(false);
+    setScores([]);
+  };
+
+  if (loading) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </main>
+    );
+  }
 
   if (!lesson) {
     return (
@@ -31,19 +142,6 @@ export default function LessonDetailPage() {
       </main>
     );
   }
-
-  const language = getLanguageById(lesson.languageId);
-
-  const handleComplete = (finalScores: number[]) => {
-    setScores(finalScores);
-    setCompleted(true);
-  };
-
-  const handleRestart = () => {
-    setStarted(false);
-    setCompleted(false);
-    setScores([]);
-  };
 
   if (completed) {
     return (
@@ -60,15 +158,11 @@ export default function LessonDetailPage() {
     );
   }
 
-  if (started) {
+  if (started && language) {
     return (
       <main className="min-h-screen">
         <Navbar />
-        <LessonPractice
-          lesson={lesson}
-          language={language!}
-          onComplete={handleComplete}
-        />
+        <LessonPractice lesson={lesson} language={language} onComplete={handleComplete} />
         <Footer />
       </main>
     );
@@ -88,16 +182,14 @@ export default function LessonDetailPage() {
 
           <div className="glass rounded-3xl p-8">
             <div className="flex items-center gap-4 mb-6">
-              <span className="text-5xl">{language?.flag}</span>
+              <span className="text-5xl">{language?.flag || "📚"}</span>
               <div>
-                <span className="text-sm text-primary font-medium">{language?.name}</span>
+                <span className="text-sm text-primary font-medium">{language?.name || lesson.languageId}</span>
                 <h1 className="text-3xl font-bold">{lesson.title}</h1>
               </div>
             </div>
 
-            <p className="text-lg text-muted-foreground mb-8">
-              {lesson.description}
-            </p>
+            <p className="text-lg text-muted-foreground mb-8">{lesson.description}</p>
 
             <div className="grid grid-cols-3 gap-4 mb-8">
               <div className="glass rounded-xl p-4 text-center">
@@ -139,12 +231,8 @@ export default function LessonDetailPage() {
               </div>
             </div>
 
-            <Button
-              size="lg"
-              className="w-full glow py-6 text-lg"
-              onClick={() => setStarted(true)}
-            >
-              Start Lesson
+            <Button size="lg" className="w-full glow py-6 text-lg" onClick={() => setStarted(true)} disabled={!language}>
+              {language ? "Start Lesson" : "Language not available"}
             </Button>
           </div>
         </div>

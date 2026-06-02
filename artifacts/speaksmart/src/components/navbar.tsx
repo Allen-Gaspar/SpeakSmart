@@ -38,19 +38,31 @@ export function Navbar() {
 
           {/* Desktop Nav */}
           <div className="hidden md:flex items-center gap-6">
-            <Link href="/languages" className="text-muted-foreground hover:text-foreground transition-colors text-sm">
-              Languages
-            </Link>
-            <Link href="/lessons" className="text-muted-foreground hover:text-foreground transition-colors text-sm">
-              Lessons
-            </Link>
-            <Link href="/leaderboard" className="text-muted-foreground hover:text-foreground transition-colors text-sm">
-              Leaderboard
-            </Link>
-            <Link href="/tutorial" className="text-muted-foreground hover:text-foreground transition-colors text-sm flex items-center gap-1">
-              <HelpCircle className="w-3.5 h-3.5" />
-              Help
-            </Link>
+            {/* Only show user pages for non-admin users */}
+            {!userData?.isAdmin && (
+              <>
+                <Link href="/languages" className="text-muted-foreground hover:text-foreground transition-colors text-sm">
+                  Languages
+                </Link>
+                <Link href="/lessons" className="text-muted-foreground hover:text-foreground transition-colors text-sm">
+                  Lessons
+                </Link>
+                <Link href="/leaderboard" className="text-muted-foreground hover:text-foreground transition-colors text-sm">
+                  Leaderboard
+                </Link>
+                <Link href="/tutorial" className="text-muted-foreground hover:text-foreground transition-colors text-sm flex items-center gap-1">
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  Help
+                </Link>
+              </>
+            )}
+            {/* Admin quick link */}
+            {userData?.isAdmin && (
+              <Link href="/admin" className="text-yellow-400 hover:text-yellow-300 transition-colors text-sm flex items-center gap-1">
+                <Shield className="w-3.5 h-3.5" />
+                Admin Panel
+              </Link>
+            )}
 
             {loading ? (
               <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
@@ -78,12 +90,22 @@ export function Navbar() {
                     <p className="text-xs text-muted-foreground">Level {userData?.level} · {userData?.xp} XP</p>
                   </div>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link href="/dashboard" className="flex items-center gap-2">
-                      <LayoutDashboard className="w-4 h-4" />
-                      Dashboard
-                    </Link>
-                  </DropdownMenuItem>
+                  {/* Admin gets Admin Panel, users get Dashboard */}
+                  {userData?.isAdmin ? (
+                    <DropdownMenuItem asChild>
+                      <Link href="/admin" className="flex items-center gap-2 text-yellow-400">
+                        <Shield className="w-4 h-4" />
+                        Admin Panel
+                      </Link>
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem asChild>
+                      <Link href="/dashboard" className="flex items-center gap-2">
+                        <LayoutDashboard className="w-4 h-4" />
+                        Dashboard
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem asChild>
                     <Link href="/profile" className="flex items-center gap-2">
                       <User className="w-4 h-4" />
@@ -96,22 +118,14 @@ export function Navbar() {
                       Settings
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/tutorial" className="flex items-center gap-2">
-                      <HelpCircle className="w-4 h-4" />
-                      Help & Tutorial
-                    </Link>
-                  </DropdownMenuItem>
-                  {userData?.isAdmin && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem asChild>
-                        <Link href="/admin" className="flex items-center gap-2 text-yellow-400">
-                          <Shield className="w-4 h-4" />
-                          Admin Panel
-                        </Link>
-                      </DropdownMenuItem>
-                    </>
+                  {/* Only show Help for non-admin users */}
+                  {!userData?.isAdmin && (
+                    <DropdownMenuItem asChild>
+                      <Link href="/tutorial" className="flex items-center gap-2">
+                        <HelpCircle className="w-4 h-4" />
+                        Help & Tutorial
+                      </Link>
+                    </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
@@ -146,27 +160,49 @@ export function Navbar() {
       {mobileMenuOpen && (
         <div className="md:hidden glass border-t border-border">
           <div className="px-4 py-4 space-y-1">
-            {[
-              { href: "/languages", label: "Languages" },
-              { href: "/lessons", label: "Lessons" },
-              { href: "/leaderboard", label: "Leaderboard" },
-              { href: "/tutorial", label: "Help & Tutorial" },
-            ].map(({ href, label }) => (
-              <Link
-                key={href}
-                href={href}
-                className="block px-3 py-2 rounded-lg hover:bg-secondary transition-colors text-sm"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {label}
-              </Link>
-            ))}
+            {/* Only show user pages for non-admin users */}
+            {!userData?.isAdmin && (
+              <>
+                {[
+                  { href: "/languages", label: "Languages" },
+                  { href: "/lessons", label: "Lessons" },
+                  { href: "/leaderboard", label: "Leaderboard" },
+                  { href: "/tutorial", label: "Help & Tutorial" },
+                ].map(({ href, label }) => (
+                  <Link
+                    key={href}
+                    href={href}
+                    className="block px-3 py-2 rounded-lg hover:bg-secondary transition-colors text-sm"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {label}
+                  </Link>
+                ))}
+              </>
+            )}
 
             {user ? (
               <>
                 <div className="border-t border-border my-2" />
+                {/* Admin gets admin panel link, users get dashboard */}
+                {userData?.isAdmin ? (
+                  <Link
+                    href="/admin"
+                    className="block px-3 py-2 rounded-lg hover:bg-secondary transition-colors text-sm text-yellow-400"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Admin Panel
+                  </Link>
+                ) : (
+                  <Link
+                    href="/dashboard"
+                    className="block px-3 py-2 rounded-lg hover:bg-secondary transition-colors text-sm"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Dashboard
+                  </Link>
+                )}
                 {[
-                  { href: "/dashboard", label: "Dashboard" },
                   { href: "/profile", label: "Profile" },
                   { href: "/settings", label: "Settings" },
                 ].map(({ href, label }) => (
@@ -179,15 +215,6 @@ export function Navbar() {
                     {label}
                   </Link>
                 ))}
-                {userData?.isAdmin && (
-                  <Link
-                    href="/admin"
-                    className="block px-3 py-2 rounded-lg hover:bg-secondary transition-colors text-sm text-yellow-400"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    👑 Admin Panel
-                  </Link>
-                )}
                 <button
                   onClick={() => { handleSignOut(); setMobileMenuOpen(false); }}
                   className="block w-full text-left px-3 py-2 rounded-lg text-destructive hover:bg-secondary transition-colors text-sm"

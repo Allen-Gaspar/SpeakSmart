@@ -129,13 +129,13 @@ export const languages: Language[] = [
   },
   {
     id: "tagalog",
-    name: "Filipino",
-    nativeName: "Filipino/Tagalog",
+    name: "Tagalog",
+    nativeName: "Tagalog",
     flag: "🇵🇭",
-    speechCode: "fil-PH",
+    speechCode: "tl-PH",
     accents: [
-      { id: "fil-ph", name: "Filipino", region: "Philippines", speechCode: "fil-PH" },
       { id: "tl-ph", name: "Tagalog", region: "Metro Manila", speechCode: "tl-PH" },
+      { id: "fil-ph", name: "Filipino", region: "Philippines", speechCode: "fil-PH" },
     ],
   },
 ];

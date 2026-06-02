@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import type { Language, Accent } from "@/lib/languages";
 import {
   useSpeechRecognition,
@@ -178,7 +180,7 @@ const phraseBank: Record<string, Phrase[]> = {
     { native: "가장 가까운 역이 어디예요?", romanization: "Gajang gakkaun yeogi eodiyeyo?", translation: "Where is the nearest station?" },
     { native: "도와주세요.", romanization: "Dowajuseyo.", translation: "Please help me." },
     { native: "이해가 안 돼요.", romanization: "Ihaega an dwaeyo.", translation: "I don't understand." },
-    { native: "이거 얼마예요?", romanization: "Igeo eolmayeyo?", translation: "How much is this?" },
+    { native: "이�� 얼마예요?", romanization: "Igeo eolmayeyo?", translation: "How much is this?" },
     { native: "안녕히 가세요.", romanization: "Annyeonghi gaseyo.", translation: "Goodbye." },
     { native: "좋은 아침이에요.", romanization: "Joeun achimieyo.", translation: "Good morning." },
     { native: "한국어를 배우고 있어요.", romanization: "Hangugeoreul baeugo isseoyo.", translation: "I am learning Korean." },
@@ -238,6 +240,23 @@ const phraseBank: Record<string, Phrase[]> = {
     { native: "هل يمكنك التكرار؟", romanization: "Hal yumkinuka at-tikrār?", translation: "Can you repeat?" },
     { native: "هذا لذيذ!", romanization: "Hādhā ladhīdh!", translation: "This is delicious!" },
   ],
+  tagalog: [
+    { native: "Kumusta ka?", translation: "How are you?" },
+    { native: "Magandang umaga!", translation: "Good morning!" },
+    { native: "Magandang hapon!", translation: "Good afternoon!" },
+    { native: "Magandang gabi!", translation: "Good evening!" },
+    { native: "Salamat po.", translation: "Thank you (polite)." },
+    { native: "Walang anuman.", translation: "You're welcome." },
+    { native: "Paalam na po.", translation: "Goodbye (polite)." },
+    { native: "Ako si Juan.", translation: "I am Juan." },
+    { native: "Natutuwa akong makilala ka.", translation: "Nice to meet you." },
+    { native: "Saan ka pupunta?", translation: "Where are you going?" },
+    { native: "Magkano po ito?", translation: "How much is this?" },
+    { native: "Hindi ko maintindihan.", translation: "I don't understand." },
+    { native: "Pwede mo bang ulitin?", translation: "Can you repeat that?" },
+    { native: "Nag-aaral ako ng Tagalog.", translation: "I am learning Tagalog." },
+    { native: "Masarap ang pagkain!", translation: "The food is delicious!" },
+  ],
 };
 
 function shuffle<T>(arr: T[]): T[] {
@@ -269,7 +288,52 @@ function timeAgo(ts: number): string {
 }
 
 export function PracticeArea({ language, accent }: PracticeAreaProps) {
-  const allPhrases = phraseBank[language.id] || phraseBank.english;
+  const staticPhrases = phraseBank[language.id] || [];
+  const [allPhrases, setAllPhrases] = useState<Phrase[]>(staticPhrases.length > 0 ? staticPhrases : phraseBank.english);
+  const [loadingPhrases, setLoadingPhrases] = useState(false);
+
+  // Fetch admin-added lessons for this language from Firestore
+  useEffect(() => {
+    const fetchAdminLessons = async () => {
+      setLoadingPhrases(true);
+      try {
+        const q = query(collection(db, "adminLessons"), where("languageId", "==", language.id));
+        const snap = await getDocs(q);
+        const adminPhrases: Phrase[] = [];
+        snap.docs.forEach((doc) => {
+          const data = doc.data();
+          if (data.phrases && Array.isArray(data.phrases)) {
+            data.phrases.forEach((p: { text: string; translation: string; hint?: string }) => {
+              adminPhrases.push({
+                native: p.text,
+                translation: p.translation,
+                romanization: p.hint, // use hint as romanization/pronunciation guide
+              });
+            });
+          }
+        });
+        
+        // Combine static phrases with admin phrases
+        const combined = [...staticPhrases, ...adminPhrases];
+        if (combined.length > 0) {
+          setAllPhrases(combined);
+        } else {
+          // Fallback to English if no phrases found
+          setAllPhrases(phraseBank.english);
+        }
+      } catch (error) {
+        console.error("Error fetching admin lessons:", error);
+        // Keep static phrases or English fallback
+        if (staticPhrases.length > 0) {
+          setAllPhrases(staticPhrases);
+        }
+      } finally {
+        setLoadingPhrases(false);
+      }
+    };
+
+    fetchAdminLessons();
+  }, [language.id, staticPhrases]);
 
   // ── Mode ───────────────────────────────────────────────────────────────────
   const [mode, setMode] = useState<Mode>("bank");
@@ -279,6 +343,12 @@ export function PracticeArea({ language, accent }: PracticeAreaProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const currentPhraseRef = useRef(pool[currentIndex]);
   useEffect(() => { currentPhraseRef.current = pool[currentIndex]; }, [pool, currentIndex]);
+
+  // Update pool when allPhrases changes
+  useEffect(() => {
+    setPool(shuffle(allPhrases).slice(0, BATCH));
+    setCurrentIndex(0);
+  }, [allPhrases]);
 
   // ── Custom Phrase ──────────────────────────────────────────────────────────
   const [customInput, setCustomInput] = useState("");

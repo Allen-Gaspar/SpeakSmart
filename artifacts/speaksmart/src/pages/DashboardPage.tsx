@@ -1,5 +1,3 @@
-import { useEffect } from "react";
-import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth-context";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
@@ -8,27 +6,12 @@ import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { QuickPractice } from "@/components/dashboard/quick-practice";
 import { AchievementBanner } from "@/components/dashboard/achievement-banner";
 import { OnboardingTour } from "@/components/tutorial/OnboardingTour";
-import { Loader2 } from "lucide-react";
 
 export default function DashboardPage() {
-  const [, setLocation] = useLocation();
-  const { user, userData, loading, markTutorialComplete } = useAuth();
+  const { userData, markTutorialComplete } = useAuth();
 
-  useEffect(() => {
-    if (!loading && !user) {
-      setLocation("/login");
-    }
-  }, [user, loading, setLocation]);
-
-  if (loading) {
-    return (
-      <main className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </main>
-    );
-  }
-
-  if (!user || !userData) return null;
+  // ProtectedRoute handles auth check, so userData should always exist here
+  if (!userData) return null;
 
   const showTour = userData.tutorialComplete === false;
 
@@ -61,7 +44,7 @@ export default function DashboardPage() {
       </div>
       <Footer />
 
-      {/* Onboarding tour for new users — shown once */}
+      {/* Onboarding tour for new users - shown once */}
       <OnboardingTour show={showTour} onDone={markTutorialComplete} />
     </main>
   );

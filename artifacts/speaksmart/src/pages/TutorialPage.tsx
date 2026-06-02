@@ -41,7 +41,7 @@ const SECTIONS: Section[] = [
       "Browse all 11 available languages on the Languages page.",
       "Each language has multiple regional accents to choose from.",
       "Click a language to start practicing with that accent.",
-      "Languages include: English, Spanish, French, German, Japanese, Chinese, Korean, Portuguese, Italian, Arabic, and Filipino.",
+      "Languages include: English, Spanish, French, German, Japanese, Chinese, Korean, Portuguese, Italian, Arabic, and Tagalog.",
     ],
   },
   {

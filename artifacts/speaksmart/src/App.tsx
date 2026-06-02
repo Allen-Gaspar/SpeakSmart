@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ThemeProvider } from "@/lib/theme-context";
+import { ProtectedRoute } from "@/components/protected-route";
 import { WelcomeTour } from "@/components/tutorial/WelcomeTour";
 import HomePage from "@/pages/HomePage";
 import LoginPage from "@/pages/LoginPage";
@@ -47,26 +48,89 @@ function HomePageWithTour() {
   );
 }
 
+// Wrapped components for protected routes
+function ProtectedDashboard() {
+  return (
+    <ProtectedRoute>
+      <DashboardPage />
+    </ProtectedRoute>
+  );
+}
+
+function ProtectedProfile() {
+  return (
+    <ProtectedRoute>
+      <ProfilePage />
+    </ProtectedRoute>
+  );
+}
+
+function ProtectedSettings() {
+  return (
+    <ProtectedRoute>
+      <SettingsPage />
+    </ProtectedRoute>
+  );
+}
+
+function ProtectedLessonDetail() {
+  return (
+    <ProtectedRoute>
+      <LessonDetailPage />
+    </ProtectedRoute>
+  );
+}
+
+function ProtectedPractice() {
+  return (
+    <ProtectedRoute>
+      <PracticePage />
+    </ProtectedRoute>
+  );
+}
+
+function ProtectedAdmin() {
+  return (
+    <ProtectedRoute requireAdmin>
+      <AdminPage />
+    </ProtectedRoute>
+  );
+}
+
+function ProtectedTutorial() {
+  return (
+    <ProtectedRoute>
+      <TutorialPage />
+    </ProtectedRoute>
+  );
+}
+
 function Router() {
   return (
     <Switch>
+      {/* Public routes */}
       <Route path="/" component={HomePageWithTour} />
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RegisterPage} />
-      <Route path="/dashboard" component={DashboardPage} />
       <Route path="/languages" component={LanguagesPage} />
       <Route path="/lessons" component={LessonsPage} />
-      <Route path="/lessons/:lessonId" component={LessonDetailPage} />
-      <Route path="/practice/:language" component={PracticePage} />
-      <Route path="/profile" component={ProfilePage} />
-      <Route path="/settings" component={SettingsPage} />
       <Route path="/leaderboard" component={LeaderboardPage} />
       <Route path="/about" component={AboutPage} />
       <Route path="/contact" component={ContactPage} />
       <Route path="/privacy" component={PrivacyPage} />
       <Route path="/terms" component={TermsPage} />
-      <Route path="/admin" component={AdminPage} />
-      <Route path="/tutorial" component={TutorialPage} />
+      
+      {/* Protected user routes */}
+      <Route path="/dashboard" component={ProtectedDashboard} />
+      <Route path="/lessons/:lessonId" component={ProtectedLessonDetail} />
+      <Route path="/practice/:language" component={ProtectedPractice} />
+      <Route path="/profile" component={ProtectedProfile} />
+      <Route path="/settings" component={ProtectedSettings} />
+      <Route path="/tutorial" component={ProtectedTutorial} />
+      
+      {/* Admin routes */}
+      <Route path="/admin" component={ProtectedAdmin} />
+      
       <Route component={NotFound} />
     </Switch>
   );

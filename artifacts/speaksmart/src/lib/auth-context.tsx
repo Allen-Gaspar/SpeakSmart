@@ -169,8 +169,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await firebaseSignOut(auth);
+    // Clear all session data for security
+    setUser(null);
     setUserData(null);
+    
+    // Clear any cached auth state
+    sessionStorage.clear();
+    localStorage.removeItem("speaksmart_custom_history");
+    
+    // Sign out from Firebase
+    await firebaseSignOut(auth);
+    
+    // Replace browser history to prevent back button from accessing protected pages
+    window.history.replaceState(null, "", "/login");
+    window.location.href = "/login";
   };
 
   const refreshUserData = async () => {
